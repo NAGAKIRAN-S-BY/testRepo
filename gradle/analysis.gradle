@@ -1,0 +1,111 @@
+boolean isCIEnvironment = System.getenv('CI') == "true"
+
+checkstyle {
+    configDirectory.set file("$rootDir/config/checkstyle")
+    configProperties = [projectDir: "${projectDir}"]
+    tasks.withType(Checkstyle) {
+        reports {
+            xml.enabled true
+            html.enabled true
+            html.stylesheet resources.text.fromFile("$rootDir/config/checkstyle/checkstyle-custom.xsl")
+        }
+    }
+}
+
+spotless {
+    java {
+        target 'src/*/java/**/*.java'
+
+        importOrder('', 'java', 'javax', 'org', 'com', '\\#')
+        removeUnusedImports()
+        indentWithSpaces()
+    }
+}
+
+spotbugs {
+    ignoreFailures = false
+    spotbugsTest.enabled = false
+}
+
+spotbugsMain {
+    reports {
+        boolean enableXmlReport = isCIEnvironment
+        boolean enableHtmlReport = !isCIEnvironment
+        xml.enabled = enableXmlReport
+        html.enabled = enableHtmlReport
+        reportLevel = "high"
+    }
+}
+
+pmd {
+    ruleSetConfig = resources.text.fromFile("$rootDir/config/pmd/pmd_ruleset.xml")
+    // The gradle pmd plugin will configure some ruleset(s) by default as well
+    // so they need to be cleared out so _only_ the ruleSetConfig for the project is used
+    ruleSets = []
+    ignoreFailures = false
+    pmdTest.enabled = false
+    consoleOutput = true
+    toolVersion = '6.15.0'
+}
+
+tasks.withType(Pmd){
+    reports{
+        xml.enabled = true
+    }
+}
+
+jacoco {
+    toolVersion = '0.8.5'
+}
+
+jacocoTestReport {
+    reports {
+        xml.enabled true
+        csv.enabled true
+        html.destination file("${buildDir}/reports/jacoco/test/html")
+    }
+}
+
+if (isCIEnvironment) {
+    jacocoTestCoverageVerification {
+        violationRules {
+            rule {
+                limit {
+                    minimum = 0.95
+                }
+            }
+        }
+    }
+}
+
+sonarqube {
+    skipProject = false
+    properties {
+        property 'sonar.java.checkstyle.reportPaths', './build/reports/checkstyle/main.xml,./build/reports/checkstyle/test.xml'
+        property 'sonar.coverage.jacoco.xmlReportPaths', './build/reports/jacoco/test/jacocoTestReport.xml'
+        property 'sonar.java.pmd.reportPaths', './build/reports/pmd/main.xml'
+        property 'sonar.java.spotbugs.reportPaths', './build/reports/spotbugs/main.xml'
+    }
+}
+
+test {
+    finalizedBy jacocoTestReport
+    finalizedBy jacocoTestCoverageVerification
+}
+
+pitest {
+    testPlugin = 'junit5'
+    targetClasses = ['com.blueyonder.*']
+    mainSourceSets = [sourceSets.main]
+    testSourceSets = [sourceSets.test]
+    threads = Runtime.runtime.availableProcessors()
+    timestampedReports = false
+    useClasspathFile = true     //useful with bigger projects on Windows
+    timeoutConstInMillis = 1000
+    outputFormats = ['XML', 'HTML']
+    mutationThreshold = 90 /* Minimum Mutation coverage at which the build should fail */
+    coverageThreshold = 95 /* Minimum Line coverage at which the build should fail */
+    excludedMethods = ['equals','hashCode','toString']
+    excludedClasses = ['*.LiamPermissions']
+    enableDefaultIncrementalAnalysis = true
+}

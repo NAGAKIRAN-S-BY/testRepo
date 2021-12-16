@@ -1,0 +1,74 @@
+name: Performance Tests (Staging)
+
+on:
+  workflow_dispatch: # allow manual triggering
+  repository_dispatch:
+    types: [staging_post_deploy_notify]
+
+env:
+  ORG_GRADLE_PROJECT_artifactory_user: ${{ secrets.EXEC_ECOM_ARTIFACTORY_USERNAME }}
+  ORG_GRADLE_PROJECT_artifactory_password: ${{ secrets.EXEC_ECOM_ARTIFACTORY_PASSWORD }}
+  EXEC_ECOM_STAGING_EVENTHUB_PUBLISH_KEY: ${{ secrets.EXEC_ECOM_STAGING_EVENTHUB_PUBLISH_KEY }}
+  EXEC_ECOM_PSR_CLIENT_ID: ${{ secrets.EXEC_ECOM_PSR_CLIENT_ID }}
+  EXEC_ECOM_PSR_CLIENT_SECRET: ${{ secrets.EXEC_ECOM_PSR_CLIENT_SECRET }}
+
+jobs:
+  precheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    outputs:
+      performance_tests_exist: ${{ steps.performance_test_check.outputs.performance_tests_exist }}
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - id: performance_test_check
+        name: Check if performance tests exist
+        run: |
+          echo ::set-output name=performance_tests_exist::$(test -f performance/build.gradle && echo "true")
+
+  perftests:
+    runs-on: ubuntu-latest
+    needs: precheck
+    timeout-minutes: 60
+    if: needs.precheck.outputs.performance_tests_exist == 'true'
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Set up JDK
+        uses: actions/setup-java@v1
+        with:
+          java-version: 11
+
+      - name: Set up Python 3.6
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.6
+
+      - name: Install Bzt
+        id: installBzt
+        run: pip install bzt
+
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Run Perf Tests
+        id: runPerfTests
+        run: |
+          # run performance tests
+          ./gradlew bztAll -PbztEnvFile=staging.yaml
+
+      - name: Upload performance results
+        uses: actions/upload-artifact@v2
+        if: always() && (steps.runPerfTests.outcome == 'success' || steps.runPerfTests.outcome == 'failure')
+        continue-on-error: true
+        with:
+          name: staging-performance-results
+          path: performance/build/**

@@ -1,0 +1,107 @@
+plugins {
+    id 'java'
+    id 'pl.allegro.tech.build.axion-release'
+    id 'com.jfrog.artifactory'
+    id 'maven-publish'
+    id 'org.sonarqube'
+    id 'io.spring.dependency-management' apply false
+    id 'org.springframework.boot' apply false
+    id 'com.github.ben-manes.versions' version '0.39.0'
+    id 'se.patrikerdes.use-latest-versions' version '0.2.17'
+}
+
+scmVersion {
+    ignoreUncommittedChanges false
+    versionIncrementer 'incrementMinor'
+
+    // Injected from github secret
+    repository.customUsername = System.getenv('RELEASE_USER')
+    repository.customPassword = System.getenv('RELEASE_TOKEN')
+
+}
+
+allprojects {
+    apply from: "$rootDir/gradle/dependency-updates.gradle"
+
+    repositories {
+        mavenLocal()
+        maven {
+            url "${artifactory_url}/jda-dev-repositories"
+            credentials {
+                username = artifactory_user
+                password = artifactory_password
+            }
+        }
+    }
+
+    project.version = scmVersion.version
+    ext {
+        apiRootPackage = 'com.blueyonder.exec.ecom.execud-daas-etl'
+    }
+}
+
+// We must configure sonarqube in the root project to support
+// having sub-projects report as sub-modules.
+sonarqube {
+    properties {
+        property 'sonar.projectName', "${project.sonarProjectPrefix}-${project.name}"
+        property 'sonar.projectKey', "${project.group}:${project.sonarProjectPrefix}-${project.name}"
+    }
+}
+
+subprojects {
+    apply plugin: 'java'
+    apply plugin: 'io.spring.dependency-management'
+
+    sourceCompatibility = JavaVersion.VERSION_11
+
+    ext {
+        set('springCloudVersion', '2020.0.4')
+        set('log4j2.version', '2.16.0')
+        set('logback.version', '1.2.8')
+    }
+
+    dependencyManagement {
+        imports {
+            mavenBom "org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}"
+            mavenBom org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES
+        }
+
+        dependencies {
+            dependency 'com.blueyonder.exec.ecom:boot-commons:1.22.0'
+            dependency 'com.blueyonder.exec.ecom:boot-commons-core-test:1.22.0'
+            dependency 'com.blueyonder.exec.ecom:boot-outbox:1.29.0'
+            dependency 'com.blueyonder.exec.ecom:bydm-2021.4.0:1.18.0'
+            dependency 'com.blueyonder.exec.ecom:multitenant-spring-boot-starter:1.20.0'
+            dependency 'com.blueyonder.exec.ecom:liam-starter:1.77.0'
+            dependency 'de.codecentric:spring-boot-admin-starter-client:2.5.3'
+            dependency 'com.azure.spring:azure-spring-boot-starter-keyvault-secrets:3.8.0'
+            dependency 'io.swagger:swagger-annotations:1.6.2'
+            dependency 'org.apache.commons:commons-lang3:3.12.0'
+            dependency 'org.pitest:pitest-junit5-plugin:0.15'
+            dependency 'org.projectlombok:lombok:1.18.20'
+        }
+    }
+
+    test {
+        useJUnitPlatform()
+    }
+
+    // Disable sonarqube for all sub-projects by default.
+    // Any sub-project that wants to use it should import
+    // analysis.gradle to enable it.
+    sonarqube {
+        skipProject = true
+    }
+}
+
+task printVersion {
+    doLast {
+        println project.version
+    }
+}
+
+// We don't want to publish the root project. We only want to
+// publish the subprojects. This only skips root project
+// publishing.
+artifactoryPublish.skip = true

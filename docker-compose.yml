@@ -1,0 +1,85 @@
+version: '3'
+
+services:
+  starter-service:
+    image: starter-service
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DB_HOST: mssql:1433
+      DB_USER: sa
+      DB_PASSWORD: P@ssword01
+      spring.datasource.url: jdbc:sqlserver://$${DB_HOST}
+      multitenant.datasource.url.template: jdbc:sqlserver://$${DB_HOST};databaseName=ecom_{tenant_id}
+      multitenant.provisioning.database.template: "IF ((select count(*) from sys.databases where name = N'{database_name}') = 0) BEGIN CREATE DATABASE \"{database_name}\" END;"
+      multitenant.provisioning.enabled: 'true'
+      ECOM_EVENT_HUB_NAMESPACE: kafka:29092
+      SPRING_SLEUTH_HEADERS: x-test-name,x-sampler-name
+      RBAC_PERMISSIONS_URL: http://mockserver:1080/rbac/searchPermissions
+    depends_on:
+      - mssql
+      - kafka
+    ports:
+      - "8080:8080"
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    ports:
+      - 2181:2181
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafdrop:
+    image: obsidiandynamics/kafdrop:3.8.1
+    depends_on:
+      - kafka
+      - zookeeper
+    expose:
+      - 9000
+    ports:
+      - 9000:9000
+    environment:
+      ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_BROKERCONNECT: kafka:29092
+
+  kafka:
+    image: confluentinc/cp-kafka:7.0.0
+    hostname: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - 9092:9092
+      - 29092:29092
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+  mssql:
+    image: "mcr.microsoft.com/mssql/server:2019-latest"
+    environment:
+      ACCEPT_EULA: Y
+      SA_PASSWORD: P@ssword01
+    ports:
+      - "1433:1433"
+
+  mockserver:
+    build:
+      context: mockserver
+      dockerfile: Dockerfile
+    ports:
+      - 1080:1080
+    environment:
+      MOCKSERVER_INITIALIZATION_JSON_PATH: /config/initializerJson.json
+
+  zipkin:
+    image: openzipkin/zipkin
+    environment:
+      - STORAGE_TYPE=mem
+    ports:
+      - "9411:9411"

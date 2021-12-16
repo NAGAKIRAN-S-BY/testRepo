@@ -1,0 +1,310 @@
+name: Pull Request Validations
+
+on:
+  pull_request:
+
+env:
+  ORG_GRADLE_PROJECT_artifactory_user: ${{ secrets.EXEC_ECOM_ARTIFACTORY_USERNAME }}
+  ORG_GRADLE_PROJECT_artifactory_password: ${{ secrets.EXEC_ECOM_ARTIFACTORY_PASSWORD }}
+  HELM_PUBLISH_URL: https://jdasoftware.jfrog.io/jdasoftware/helm-release-local/ecom/exec-ud-daas-etl-service
+  HELM_PUBLISH_USER: ${{ secrets.EXEC_ECOM_ARTIFACTORY_USERNAME }}
+  HELM_PUBLISH_PASSWORD: ${{ secrets.EXEC_ECOM_ARTIFACTORY_PASSWORD }}
+  ACR_PATH: ecomdeploymentacr.azurecr.io/exec-ud-daas-etl-service
+  SERVICE_NAME: exec-ud-daas-etl-service
+  HELM_PATH: helm/exec-ud-daas-etl-service
+  SNAPSHOT_VERSION: ${{ format('{0}-SNAPSHOT', github.event.number) }}
+  GITHUB_ISSUE_NUMBER: ${{ github.event.number }}
+  GITHUB_REPO: ${{ github.event.repository.name }}
+  DEPLOYMENT_NOTIFICATION_URL: https://api.github.com/repos/JDA-Product-Development/exec-ecom-azure-deployment/dispatches
+  DEPLOYMENT_NOTIFICATION_URL_TOKEN: ${{ secrets.EXEC_ECOM_DEPLOYMENTS_PAT }}
+  STRATOSPHERE_ACR_NAME: ob6b3kadl16b3pr40oawi0cx
+  STRATOSPHERE_ACR_URL: ob6b3kadl16b3pr40oawi0cx.azurecr.io
+  STRATOSPHERE_ENV_PREFIX: stratosphere-
+  AZ_SX_SPN_CLIENT: ${{ secrets.EXEC_ECOM_AZ_SANDBOX_SPN_CLIENT_ID }}
+  AZ_SX_SPN_SECRET: ${{ secrets.EXEC_ECOM_AZ_SANDBOX_SPN_CLIENT_SECRET }}
+  AZ_SX_TENANT_ID: ${{ secrets.EXEC_ECOM_AZ_JDADELIVERS_TENANT_ID }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK
+        uses: actions/setup-java@v1
+        with:
+          java-version: 11
+
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Build with Gradle
+        id: build
+        run: |
+          ./gradlew build
+
+      - name: Run codacy-coverage-reporter
+        uses: codacy/codacy-coverage-reporter-action@v1
+        with:
+          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
+          coverage-reports: service/build/reports/jacoco/test/jacocoTestReport.xml
+        
+      - name: codacy PR
+        run: |
+          set +e
+          CODACY_API_URL="https://app.codacy.com/api/v3/analysis/organizations/gh/JDA-Product-Development/repositories/exec-ecom-$SERVICE_NAME/issues/search"
+          CODACY_PROJECT_URL="https://app.codacy.com/gh/JDA-Product-Development/exec-ecom-$SERVICE_NAME/dashboard"
+          CODACY_REPO_URL="https://app.codacy.com/api/v3/analysis/organizations/gh/JDA-Product-Development/repositories/exec-ecom-$SERVICE_NAME"
+          echo "grade=$(curl "$CODACY_REPO_URL" -H 'Accept: application/json' -H "api-token:${{ secrets.EXEC_ECOM_CODACY_ACCOUNT_TOKEN }}" |jq -r .data.gradeLetter'')" >> $GITHUB_ENV
+          echo "issuePercentage=$(curl "$CODACY_REPO_URL" -H 'Accept: application/json' -H "api-token:${{ secrets.EXEC_ECOM_CODACY_ACCOUNT_TOKEN }}" |jq .data.issuesPercentage)%"  >> $GITHUB_ENV
+          echo "complexity=$(curl "$CODACY_REPO_URL" -H 'Accept: application/json' -H "api-token:${{ secrets.EXEC_ECOM_CODACY_ACCOUNT_TOKEN }}" |jq .data.complexFilesPercentage)%"  >> $GITHUB_ENV
+          echo "duplication=$(curl "$CODACY_REPO_URL" -H 'Accept: application/json' -H "api-token:${{ secrets.EXEC_ECOM_CODACY_ACCOUNT_TOKEN }}" |jq .data.duplicationPercentage)%"  >> $GITHUB_ENV
+          echo "coverage=$(curl "$CODACY_REPO_URL" -H 'Accept: application/json' -H "api-token:${{ secrets.EXEC_ECOM_CODACY_ACCOUNT_TOKEN }}" |jq .data.coverage.coveragePercentage)%"  >> $GITHUB_ENV
+          lang=$(curl  -X POST "$CODACY_API_URL" -H "api-token: ${{ secrets.EXEC_ECOM_CODACY_ACCOUNT_TOKEN }}" -H "Accept: application/json" |  jq -r '.data[].language'|sort|uniq)
+          for i in $lang; do echo "$i=$(curl  -X POST "$CODACY_API_URL" -H "api-token: ${{ secrets.EXEC_ECOM_CODACY_ACCOUNT_TOKEN }}" -H "Accept: application/json" |  jq -r --arg var $i '.data[]|select(.language==$var)|select(.patternInfo.level=="Error")|.patternInfo.level'|wc -l)"; done > ~/critical.txt
+          echo 'CRITICAL<<EOF' >> $GITHUB_ENV
+          cat ~/critical.txt | sed 's/=/         ,|, /g' |column -s ',' -t >> $GITHUB_ENV
+          echo 'EOF' >> $GITHUB_ENV
+          echo "codacy_description= Please check codacy for detailed analysis: $CODACY_PROJECT_URL" >> $GITHUB_ENV
+      - name: Post Codacy Analysis On PR
+        uses: actions/github-script@v1.1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const output = `Codacy Scan Analysis:
+            \`\`\`
+            Fields        |   Values 
+            --------------------------
+            Grade         |  ${{env.grade}}
+            Issues        |  ${{ env.issuePercentage }}
+            Complexity    |  ${{env.complexity}}
+            Duplication   |  ${{env.duplication}}
+            Coverage      |  ${{env.coverage}}
+            
+            
+            Programming Language | No. Of Critical Issues
+            ---------------------------------------------
+            ${{env.CRITICAL}}
+             
+             
+            \`\`\`
+            ${{env.codacy_description}}
+            `;
+              github.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })
+            
+      # Run the release checks that will run on master merge to check for failures before we get to master.
+      # To provide feedback in the form of a PR comment, the script must continue on error.  The output of the
+      # checks is sent ot a file, which is stored off as an environment variable.  The heredoc syntax preserves newlines.
+      - name: Run release checks
+        id: release-checks
+        run: |
+          set +e
+          ./gradlew verifyRelease -Prelease.disableRemoteCheck > ~/release-checks.txt
+          echo ::set-output name=result::$?
+          echo 'RELEASE_CHECKS<<EOF' >> $GITHUB_ENV
+          cat ~/release-checks.txt >> $GITHUB_ENV
+          echo 'EOF' >> $GITHUB_ENV
+
+      - name: Check result of release checks
+        if: steps.release-checks.outputs.result != 0
+        uses: actions/github-script@v1.1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const output = `Release checks failed:
+
+            \`\`\`
+            ${{ env.RELEASE_CHECKS }}
+            \`\`\`
+            `;
+
+            github.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })
+
+            throw "Release checks failed."
+
+      - uses: azure/docker-login@v1
+        with:
+          login-server: ecomdeploymentacr.azurecr.io
+          username: ${{ secrets.EXEC_ECOM_ACR_USERNAME }}
+          password: ${{ secrets.EXEC_ECOM_ACR_PASSWORD }}
+
+      - name: Publish Snapshot To ECOM ACR
+        run: |
+          echo Publishing to $ACR_PATH:$SNAPSHOT_VERSION
+          docker build . -t $ACR_PATH:$SNAPSHOT_VERSION
+          docker push $ACR_PATH:$SNAPSHOT_VERSION
+
+      - uses: azure/docker-login@v1
+        with:
+          login-server: $STRATOSPHERE_ACR_URL
+          username: $AZ_SX_SPN_CLIENT
+          password: $AZ_SX_SPN_SECRET
+
+      - name: Publish Snapshot To SX ACR
+        run: |
+          az login --service-principal --username $AZ_SX_SPN_CLIENT --password $AZ_SX_SPN_SECRET --tenant $AZ_SX_TENANT_ID
+          az acr login --name $STRATOSPHERE_ACR_NAME
+          echo Publishing to $STRATOSPHERE_ACR_URL/$SERVICE_NAME:$SNAPSHOT_VERSION
+          docker build . -t  $STRATOSPHERE_ACR_URL/$SERVICE_NAME:$SNAPSHOT_VERSION
+          docker push  $STRATOSPHERE_ACR_URL/$SERVICE_NAME:$SNAPSHOT_VERSION
+        
+      
+      - uses: azure/setup-helm@v1
+        with:
+          version: '3.2.1'
+        id: install
+
+      - name: Helm Publish Snapshot
+        run: |
+          helm lint
+          helm package . --app-version $SNAPSHOT_VERSION --version $SNAPSHOT_VERSION
+          curl -u $HELM_PUBLISH_USER:$HELM_PUBLISH_PASSWORD -X PUT $HELM_PUBLISH_URL/$SERVICE_NAME-$SNAPSHOT_VERSION.tgz -T $SERVICE_NAME-$SNAPSHOT_VERSION.tgz -f
+        working-directory: ${{ env.HELM_PATH }}
+
+      # Upload artifacts only if the build step has actually been executed.
+      - uses: actions/upload-artifact@v2.0.1
+        if: always() && (steps.build.outcome == 'success' || steps.build.outcome == 'failure')
+        continue-on-error: true
+        with:
+          name: check-reports
+          path: ${{ github.workspace }}/**/build/reports/**/*
+
+  corp-quality-tools:
+    runs-on: [self-hosted, ldf]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - name: Set up Node
+        uses: actions/setup-node@v2-beta
+        with:
+          node-version: '12'
+      - name: Set up JDK
+        uses: actions/setup-java@v1
+        with:
+          java-version: 11
+      - name: SonarQube PR
+        run: ./gradlew build -x integrationTest sonarqube
+          -Dsonar.host.url=${{ secrets.EXEC_ECOM_SONAR_DEV_SERVICE_URL }}
+          -Dsonar.login=${{ secrets.EXEC_ECOM_SONAR_KEY }}
+          -Dsonar.pullrequest.key=${{ github.event.number }}
+          -Dsonar.pullrequest.branch=${{ github.head_ref }}
+          -Dsonar.pullrequest.base=${{ github.base_ref }}
+          -Dsonar.pullrequest.github.repository=${{ github.repository }}
+
+  wait-for-sonar-results:
+    runs-on: [self-hosted, ldf]
+    needs: corp-quality-tools
+    timeout-minutes: 10
+    steps:
+      - name: Wait for Sonar Results
+        env:
+          SONAR_BASE_URL: ${{ secrets.EXEC_ECOM_SONAR_DEV_SERVICE_URL }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          SONAR_PROJECT_KEY_PREFIX: com.blueyonder.exec.ecom:ECOM
+        run: |
+          SONAR_API_URL="$SONAR_BASE_URL/api/qualitygates/project_status?projectKey=$SONAR_PROJECT_KEY_PREFIX-$SERVICE_NAME&pullRequest=$PR_NUMBER"
+          SONAR_PROJECT_URL="$SONAR_BASE_URL/dashboard?id=$SONAR_PROJECT_KEY_PREFIX-$SERVICE_NAME&pullRequest=$PR_NUMBER"
+          SECONDS_LIMIT=300
+          SLEEP_DURATION=10
+          timer=0
+          while (( timer < SECONDS_LIMIT )); do
+            echo "Checking sonar status of $SONAR_API_URL"
+            sonar_response=$(curl --location --request GET "$SONAR_API_URL")
+            echo "$sonar_response"
+            sonar_status=$(echo "$sonar_response" | jq -r '.projectStatus.status')
+            sonar_conditions=$(echo "$sonar_response" | jq -r '.projectStatus.conditions | .[] | .metricKey + ": " +  .status') || echo "ignoring parsing errors"
+            echo "$sonar_status"
+            if [[ "$sonar_status" != "null" ]]; then
+              echo "Sonar Status is available. Hence exiting the wait loop"
+              break
+            else
+              echo "Sonar Status is not available. Will recheck the status after $SLEEP_DURATION seconds."
+              sleep $SLEEP_DURATION;
+              timer=$((timer + $SLEEP_DURATION))
+            fi
+          done
+          if [[ "$sonar_status" == "null" ]]; then
+            sonar_status=PENDING
+            sonar_descriptive_status="Sonar results for this PR is not available after waiting for $SECONDS_LIMIT seconds. Please check sonar for results: $SONAR_PROJECT_URL"
+          else
+            sonar_descriptive_status="Sonar result for this PR is $sonar_status. Please check sonar for detailed results: $SONAR_PROJECT_URL"
+          fi
+          echo "SONAR_STATUS=${sonar_status}" >> $GITHUB_ENV
+          echo "SONAR_DESCRIPTIVE_STATUS=${sonar_descriptive_status}" >> $GITHUB_ENV
+          echo 'SONAR_CONDITIONS<<EOF' >> $GITHUB_ENV
+          echo "$sonar_conditions" >> $GITHUB_ENV
+          echo 'EOF' >> $GITHUB_ENV
+
+      - name: Post Sonar Results to PR
+        uses: actions/github-script@v1.1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const output = `Sonar Scan Result
+
+            status: \`${{ env.SONAR_STATUS}}\`
+            \`\`\`
+            ${{ env. SONAR_CONDITIONS }}
+            \`\`\`
+
+            ${{ env.SONAR_DESCRIPTIVE_STATUS }}
+            `;
+
+            github.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            });
+
+  # PRs containing the label "deploy" are automatically deployed to sandbox
+  deploy_snapshot:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+
+      # Retrieve info about the PR directly from GitHub (rather than use the stale info in our event) to see if the deploy label is present on the PR
+      - name: Check for deploy label
+        id: pr-label
+        uses: actions/github-script@v1.1
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { data: pull_request } = await github.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: ${{ env.PR_NUMBER }}
+            });
+
+            return pull_request && pull_request.labels.map(label => label.name.toLowerCase()).includes('deploy');
+
+      - name: Notify Deployment Repo
+        if: steps.pr-label.outputs.result == 'true'
+        run: |
+          AUTH_HEADER="Authorization: token $DEPLOYMENT_NOTIFICATION_URL_TOKEN"
+          PAYLOAD='{ "event_type": "deploy_service_snapshot", "client_payload": { "service": "'"$SERVICE_NAME"'", "version": "'"$SNAPSHOT_VERSION"'", "github_issue_number": "'"$GITHUB_ISSUE_NUMBER"'", "github_repo": "'"$GITHUB_REPO"'", "github_commit_sha": "'"$GITHUB_SHA"'" }'
+          curl --request POST "$DEPLOYMENT_NOTIFICATION_URL" --header "$AUTH_HEADER" --header "Content-Type: application/json" --data-raw "$PAYLOAD" -f -i

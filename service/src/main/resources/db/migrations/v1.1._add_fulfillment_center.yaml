@@ -1,0 +1,12 @@
+databaseChangeLog:
+  - changeSet:
+      id: add_fulfillment_center
+      author: Tom Schneider
+      changes:
+        - addColumn:
+            schemaName: ${schemaName}
+            tableName: foo
+            columns:
+              - column:
+                  name: fulfillment_center_id
+                  type: varchar(80)

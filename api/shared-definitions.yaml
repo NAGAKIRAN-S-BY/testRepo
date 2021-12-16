@@ -1,0 +1,134 @@
+openapi: 3.0.0
+info:
+  title: Shared Definitions
+  version: v1
+paths: {}
+
+components:
+  parameters:
+    pageSize:
+      name: pageSize
+      in: query
+      schema:
+        type: integer
+        format: int32
+        default: 50
+        minimum: 1
+      description: The maximum number of entries to return.
+    pageNumber:
+      name: pageNumber
+      in: query
+      schema:
+        type: integer
+        format: int32
+        default: 0
+        minimum: 0
+      description: >-
+        The specific page of data to return. The size of this
+        page is determined by the pageSize parameter.
+    fulfillmentCenterId:
+      name: fulfillmentCenterId
+      in: query
+      required: true
+      schema:
+        type: string
+      description: >-
+        The fulfillment center identifier of data to return.
+
+  responses:
+    ErrorResponse:
+      description: >-
+        All error responses share this common structure.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Errors'
+
+  schemas:
+    Meta:
+      type: object
+      properties:
+        page:
+          $ref: '#/components/schemas/PageMeta'
+
+    PageMeta:
+      description: >-
+        Contains information about a 'page' of entities returned in a response
+      type: object
+      properties:
+        totalCount:
+          type: integer
+          format: int64
+          description: >-
+            The total number of records available across all pages.
+
+            This value may not be populated if the total count cannot
+            be determined or it is inefficient to do so.
+        pageNumber:
+          type: integer
+          format: int32
+          description: >-
+            The page number to which the returned entities belong.
+        pageSize:
+          type: integer
+          format: int32
+          description: >-
+            The size of the page.
+
+            Note: the actual count returned may be less than this value
+            if there are not enough entities available to be returned.
+
+    Errors:
+      description: >-
+        Contains information about errors that occurred during the handling
+        of a particular request
+      type: object
+      properties:
+        status:
+          type: number
+          description: >-
+            The http status associated with this error response
+        responseId:
+          type: string
+          description: >-
+            a correlation/trace ID for the response used to remove uncertainty in support
+            ticket-to-log message correlation
+        timestamp:
+          type: string
+          format: date-time
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/Error'
+    Error:
+      description: >-
+        Information about a specific error that occurred on the server while attempting
+        to handle a request.
+
+        A single request may result in multiple errors being returned.
+      properties:
+        errorCode:
+          type: string
+          description: >-
+            A string unique to each logical error in a Module (meaning two different
+            userMessages SHOULD NOT have the  same errorCode).
+        userMessage:
+          type: string
+          description: >-
+            A localized user-friendly message that describes the error that occurred.
+        devMessage:
+          type: string
+          description: >-
+            An error message meant for development and debugging purposes.
+
+            This message (if populated) should not be displayed to a user.
+        devInfo:
+          type: object
+          description: >-
+            This map contains additional properties related to the error that may be helpful
+            in recovering from the error and/or provide additional context.
+          additionalProperties: true
+        moreInfo:
+          type: string
+          description: >-
+            An optional URL that provides additional information about the error

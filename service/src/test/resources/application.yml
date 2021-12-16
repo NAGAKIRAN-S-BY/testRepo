@@ -1,0 +1,28 @@
+spring:
+  application.name: exec-ud-daas-etl-service
+  profiles.active: test
+  h2:
+    console:
+      enabled: true
+  liquibase:
+    enabled: true
+    contexts: test
+
+  datasource:
+    url: jdbc:h2:mem:public;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;MODE=MSSQLServer;INIT=CREATE SCHEMA IF NOT EXISTS exec_ud_daas_etl_service;
+    username: root
+    password:
+
+logging:
+  level:
+    root: info
+    com.blueyonder: debug
+    org.hibernate.SQL: debug                    # Output queries (debug)
+    org.hibernate.type.descriptor.sql: trace    # Output bound parameter values (trace)
+    org.hibernate.engine.transaction: debug     # Output transactional boundaries (debug)
+  pattern: '%d{ABSOLUTE} [%X{X-B3-TraceId}/%X{X-B3-SpanId}] %-5p [%t] %C{2} - %m%n'
+
+---
+# Profile for standard test environment
+spring:
+  profiles: test

@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "exec-ud-daas-etl-service.fullname" . }}
+  labels:
+    {{- include "exec-ud-daas-etl-service.labels" . | nindent 4 }}
+  annotations:
+    secret.reloader.stakater.com/reload: {{ or .Values.monitorSecret .Values.global.monitorSecret | default (include "exec-ud-daas-etl-service.secretName" . ) | quote }}
+
+spec:
+{{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+{{- end }}
+  selector:
+    matchLabels:
+      {{- include "exec-ud-daas-etl-service.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "exec-ud-daas-etl-service.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ or .Values.image.pullPolicy .Values.global.image.pullPolicy | default "IfNotPresent" }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.internalPort }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.livenessProbe.path }}
+              port: {{ .Values.service.internalPort }}
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+            successThreshold: {{ .Values.livenessProbe.successThreshold }}
+            timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.readinessProbe.path }}
+              port: {{ .Values.service.internalPort }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+            successThreshold: {{ .Values.readinessProbe.successThreshold }}
+            timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds }}
+          {{- if .Values.autoscaling.enabled }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: java-tempdir
+              mountPath: /tmp
+            {{- if .Values.secretProvider }}
+            - name: "secrets-store-inline"
+              mountPath: "/mnt/azure-secrets"
+              readOnly: true
+            {{- end }}
+          env:
+            - name: DB_TIER
+              value: {{ or .Values.azureSql.tier .Values.global.azureSql.tier | default "basic" }}
+            - name: SPRING_SLEUTH_HEADERS
+              value: {{ .Values.spring.sleuth.headers | quote }}
+            - name: APPDYNAMICS_AGENT_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            {{- range .Values.global.environmentValues }}
+            - name: {{ quote .name }}
+              value: {{ quote .value }}
+            {{- end }}
+            {{- range .Values.environmentValues }}
+            - name: {{ quote .name }}
+              value: {{ quote .value }}
+            {{- end }}
+          envFrom:
+          - secretRef:
+              name: {{ include "exec-ud-daas-etl-service.fullname" . }}-secrets
+              optional: true
+          - secretRef:
+              name: {{ include "exec-ud-daas-etl-service.fullname" . }}-local-secrets
+              optional: true
+          - configMapRef:
+              name: appdynamics-configuration
+              optional: true
+      volumes:
+        - name: java-tempdir
+          emptyDir: {}
+        {{- if .Values.secretProvider }}
+        - name: "secrets-store-inline"
+          csi:
+            driver: "secrets-store.csi.k8s.io"
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: {{ include "exec-ud-daas-etl-service.fullname" . }}-azure-key-vault
+            nodePublishSecretRef:
+              name: {{ or .Values.secretProvider.credentialsSecret .Values.global.credentialsSecret | quote }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

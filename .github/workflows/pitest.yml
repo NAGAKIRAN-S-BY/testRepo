@@ -1,0 +1,52 @@
+name: Pitest
+
+on:
+ pull_request:
+       paths: 
+        - '**/*.gradle'
+        - '**/*.java'
+
+env:
+  ORG_GRADLE_PROJECT_artifactory_user: ${{ secrets.EXEC_ECOM_ARTIFACTORY_USERNAME }}
+  ORG_GRADLE_PROJECT_artifactory_password: ${{ secrets.EXEC_ECOM_ARTIFACTORY_PASSWORD }}
+
+jobs:
+  pitest:
+    runs-on: ubuntu-latest
+    steps:
+
+      - uses: actions/checkout@v2
+
+      - name: Set up JDK
+        uses: actions/setup-java@v1
+        with:
+          java-version: 11
+
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+            
+      - name: Execute Pitest
+        id: build
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
+        run: ./gradlew pitest
+
+      # Upload artifacts only if the build step has actually been executed.
+      - uses: actions/upload-artifact@v2.0.1
+        if: always() && (steps.build.outcome == 'success' || steps.build.outcome == 'failure')
+        continue-on-error: true
+        with:
+          name: pitest-report
+          path: ${{ github.workspace }}/**/build/reports/pitest/**/* 
+
+      # Exit the workflow if pitest fails
+      - name: Exit Job If Pitest Fails
+        if:  steps.build.outcome == 'failure'
+        run: |
+             echo 'failing the workflow as pitest failed'
+             exit 1

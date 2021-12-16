@@ -1,0 +1,31 @@
+# Staging environment overrides for load testing
+settings:
+  env:
+    # injected from environment variables
+    KAFKA_SASL_JAAS_CONFIG: org.apache.kafka.common.security.plain.PlainLoginModule required username="$ConnectionString" password="${EXEC_ECOM_STAGING_EVENTHUB_PUBLISH_KEY}";
+    TOKEN_CLIENT: ${EXEC_ECOM_PSR_CLIENT_ID}
+    TOKEN_SECRET: ${EXEC_ECOM_PSR_CLIENT_SECRET}
+    # test configuration settings
+    default.concurrency: 5
+    default.ramp-up: 5s
+    default.iterations: 10
+    test-foo.concurrency: ${default.concurrency}
+    test-foo.ramp-up: ${default.ramp-up}
+    test-foo.iterations: ${default.iterations}
+
+scenarios:
+  main:
+    properties:
+      base_url: https://api-tst.jdadelivers.com/ldf/exec-ud-daas-etl/v1
+      token_url: https://login.microsoftonline.com/35a74806-0320-4ebe-8a80-25927910263d/oauth2/v2.0/token
+      token_client: ${TOKEN_CLIENT}
+      token_secret: ${TOKEN_SECRET}
+      token_scope: https://blueyonderinteroptestus.onmicrosoft.com/6ad21424-b4b2-462e-80df-252ec22dd6a9/.default
+      kafka.bootstrap.servers: evhn-by-pd-ecom-core-stg.servicebus.windows.net:9093
+      kafka.security.protocol: SASL_SSL
+      kafka.sasl.jaas.config: ${KAFKA_SASL_JAAS_CONFIG}
+
+reporting:
+  - module: passfail
+    criteria:
+      No Errors: fail>=1, stop as failed

@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - property:
+      name: schemaName
+      value: ""
+  - include:
+      file: db/migrations/v1.0._create_table.yaml
+  - include:
+      file: db/migrations/v1.1._add_fulfillment_center.yaml

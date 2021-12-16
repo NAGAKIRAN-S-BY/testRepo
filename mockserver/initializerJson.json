@@ -1,0 +1,38 @@
+[
+  {
+    "httpRequest": {
+      "method": "POST",
+      "path": "/api/oauth/token"
+    },
+    "httpResponse": {
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "access_token": "eyJhbGciOiJub25lIn0.eyJieV9yZWFsbSI6InN0YXJ0ZXJfc2VydmljZV9wZXJmdGVzdCIsInN1YiI6InBlcmZ0ZXN0IiwiYnlfcmVhbG1faWQiOiJzdGFydGVyX3NlcnZpY2VfcGVyZnRlc3QifQ.",
+        "scope": "upload",
+        "token_type": "bearer",
+        "expires_in": 9999
+      }
+    }
+  },
+  {
+    "httpRequest": {
+      "method": "POST",
+      "path": "/rbac/searchPermissions"
+    },
+    "httpResponse": {
+      "headers": {
+        "Content-Type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "permissions": ["by.ldf.starter.view", "by.ldf.starter.manage"],
+        "policies": ["{\"@type\":\"FaaS-Data-Policy\",\"site\":\"FC1\"}"]
+      }
+    }
+  }
+]

@@ -1,0 +1,57 @@
+replicaCount: 1
+
+image:
+  repository: ecomdeploymentacr.azurecr.io/exec-ud-daas-etl-service
+
+fullnameOverride: "exec-ud-daas-etl-service"
+
+service:
+  type: LoadBalancer
+  port: 8080
+  internalPort: 8080
+  annotations:
+    service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+
+livenessProbe:
+  path: /actuator/health/liveness
+  initialDelaySeconds: 60
+  periodSeconds: 10
+  successThreshold: 1
+  timeoutSeconds: 1
+readinessProbe:
+  path: /actuator/health/readiness
+  periodSeconds: 10
+  successThreshold: 1
+  timeoutSeconds: 1
+
+azureSql:
+  tier: ""
+
+monitorSecret: ""
+
+spring:
+  sleuth:
+    headers: ""
+
+autoscaling:
+  enabled: false
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+environmentValues: []
+
+serviceLabels: {}
+
+# Global values must be defined, but are overridden by the parent chart
+global:
+  credentialsSecret: ""
+  monitorSecret: ""
+  image:
+    pullPolicy: ""
+  azureSql:
+    tier: ""
+  environmentValues: []

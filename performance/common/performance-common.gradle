@@ -1,0 +1,121 @@
+import java.nio.charset.StandardCharsets
+
+/*
+ * Utility methods used by the performance build script.
+ */
+
+def toCommandLine(def input) {
+    return input.split(" ")
+}
+
+def azCommand() {
+    return System.getProperty('os.name').toLowerCase().contains('windows') ? 'az.cmd' : 'az'
+}
+
+def lookup(String propertyName) {
+    return project.getProperties().get(propertyName)
+}
+
+def bzt(def scenarioYaml, def envFile, def tenant) {
+    exec { commandLine 'bzt', '-o', "scenarios.main.properties.tenant=${tenant}", scenarioYaml, envFile }
+}
+
+def obtainSecret(def azCommand, def secretName, def vaultName, def subscription) {
+    def obtainSecretCmd = "${azCommand} keyvault secret show --name ${secretName} --vault-name ${vaultName} --subscription ${subscription} --query value --output tsv"
+    def secretValue = new ByteArrayOutputStream()
+    exec {
+        commandLine toCommandLine(obtainSecretCmd)
+        standardOutput = secretValue;
+    }
+    return secretValue.toString().trim()
+}
+
+def obtainStorageAccountKey(def azCommand) {
+    def obtainKeyCmd = "${azCommand} storage account keys list --account-name ecomblobstorage --resource-group ecom-deployment --subscription sub-jda-cld-ecom-sandbox-01 --query [0].value --output tsv"
+    def keyValue = new ByteArrayOutputStream()
+    exec {
+        commandLine toCommandLine(obtainKeyCmd)
+        standardOutput = keyValue;
+    }
+    return keyValue.toString().trim()
+}
+
+def initPostRequest(String tenant, String url, String body) {
+    initRequest("POST", tenant, url, body)
+}
+
+def initGetRequest(String tenant, String url) {
+    initRequest("GET", tenant, url, null)
+}
+
+def initRequest(String verb, String tenant, String url, String body) {
+    // generate performance test data
+    def req = new URL(url).openConnection()
+    req.setRequestMethod(verb)
+    req.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+    req.setRequestProperty("X-TENANT-ID", tenant)
+    req.setDoOutput(true)
+    if (body != null) {
+        req.getOutputStream().write(body.getBytes(StandardCharsets.US_ASCII))
+    }
+    logger.quiet "${verb} ${url} response code: ${req.getResponseCode()}"
+    req.getInputStream().getText()
+}
+
+def initSql(def containerName, def dbName, def sqlScript) {
+    def copySqlCmd = "docker cp ${sqlScript} ${containerName}:/tmp/load.sql"
+    def loadSqlCmd = "docker exec ${containerName} /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P P@ssword01 -d ${dbName} -i /tmp/load.sql"
+    exec { commandLine toCommandLine(copySqlCmd) }
+    exec { commandLine toCommandLine(loadSqlCmd) }
+}
+
+def uploadDB(def dbName) {
+    def storageAccessKey = obtainStorageAccountKey(azCommand())
+    // backup database to file and save to storage account
+    def sqlServerContainerId = dockerCompose.servicesInfos.mssql.firstContainer.containerId
+    def copyCmd = "docker cp common/backup_and_publish.sh ${sqlServerContainerId}:/tmp/backup_and_publish.sh"
+    def backupPublishCmd = "docker exec --user=root -e STORAGE_ACCESS_KEY=${storageAccessKey} -e DB_NAME=${dbName} ${sqlServerContainerId} /bin/bash /tmp/backup_and_publish.sh"
+    exec { commandLine toCommandLine(copyCmd) }
+    exec { commandLine toCommandLine(backupPublishCmd) }
+}
+
+def refreshDB(def dbName) {
+    def azCommand = azCommand()
+    def dbSubscription = lookup('dbSubscription')
+    def dbResourceGroup = lookup('dbResourceGroup')
+    def dbServer = lookup('dbServer')
+    def dbVaultName =  lookup('dbVaultName')
+    def dbServiceObjective = lookup('dbServiceObjective')
+    def dbUsernameVaultName = lookup('dbUsernameVaultName')
+    def dbPasswordVaultName = lookup('dbPasswordVaultName')
+    def dbBackupLocation = "https://ecomblobstorage.blob.core.windows.net/performance/${dbName}.bacpac"
+
+    def storageAccessKey = obtainStorageAccountKey(azCommand)
+    def databaseUsername = obtainSecret(azCommand, dbUsernameVaultName, dbVaultName, dbSubscription)
+    def databasePassword = obtainSecret(azCommand, dbPasswordVaultName, dbVaultName, dbSubscription)
+
+    def deleteDBCmd = "${azCommand} sql db delete --subscription ${dbSubscription} -g ${dbResourceGroup} -s ${dbServer} -n ${dbName} -y"
+    def createDBCmd = "${azCommand} sql db create --subscription ${dbSubscription} -g ${dbResourceGroup} -s ${dbServer} -n ${dbName} --service-objective ${dbServiceObjective}"
+    def restoreDBCmd = "${azCommand} sql db import --subscription ${dbSubscription} -g ${dbResourceGroup} -s ${dbServer} -n ${dbName}" +
+            " -u ${databaseUsername} -p \"${databasePassword}\" " +
+            " --storage-key ${storageAccessKey} --storage-key-type StorageAccessKey --storage-uri ${dbBackupLocation}"
+    logger.info('Deleting the existing database')
+    exec {
+        commandLine toCommandLine(deleteDBCmd)
+        ignoreExitValue true
+    }
+    logger.info('Creating new database')
+    exec { commandLine toCommandLine(createDBCmd) }
+    logger.info('Restoring database backup')
+    exec { commandLine toCommandLine(restoreDBCmd) }
+}
+
+// Export methods so other build scripts can use them
+ext {
+    bzt = this.&bzt
+    initPostRequest = this.&initPostRequest
+    initGetRequest = this.&initGetRequest
+    initSql = this.&initSql
+    uploadDB = this.&uploadDB
+    refreshDB = this.&refreshDB
+}

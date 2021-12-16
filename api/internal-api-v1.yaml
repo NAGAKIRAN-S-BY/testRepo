@@ -1,0 +1,27 @@
+# This Open API Specification file contains a list of APIs that are available to other ECOM services in the cluster.
+# These APIs are exposed as public facing APIs to the BY customers.
+openapi: 3.0.0
+info:
+  description: Internal APIs for Exec Ud Daas Etl Service
+  version: 1.0.0
+  title: Luminate Digital Fulfillment Exec Ud Daas Etl Service
+tags:
+  - name: exec-ud-daas-etl-service
+    description: Exec Ud Daas Etl Service
+servers:
+  - url: http://localhost:8080/
+paths:
+
+  /bars/process:
+    post:
+      operationId: process
+      summary: Process some thing in Bars
+      tags:
+        - bars
+      parameters:
+        - $ref: 'shared-definitions.yaml#/components/parameters/fulfillmentCenterId'
+      responses:
+        204:
+          description: The request was processed.
+        default:
+          $ref: 'shared-definitions.yaml#/components/responses/ErrorResponse'

@@ -1,0 +1,191 @@
+name: Release New Version
+
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    needs: corp-quality-tools # This makes it wait for the corp-quality-tools job
+    env:
+      SERVICE_NAME: exec-ud-daas-etl-service
+      ORG_GRADLE_PROJECT_artifactory_user: ${{ secrets.EXEC_ECOM_ARTIFACTORY_USERNAME }}
+      ORG_GRADLE_PROJECT_artifactory_password: ${{ secrets.EXEC_ECOM_ARTIFACTORY_PASSWORD }}
+      ACR_PATH: ecomdeploymentacr.azurecr.io/exec-ud-daas-etl-service
+      HELM_PUBLISH_URL: https://jdasoftware.jfrog.io/jdasoftware/helm-release-local/ecom/exec-ud-daas-etl-service
+      HELM_PUBLISH_USER: ${{ secrets.EXEC_ECOM_ARTIFACTORY_USERNAME }}
+      HELM_PUBLISH_PASSWORD: ${{ secrets.EXEC_ECOM_ARTIFACTORY_PASSWORD }}
+      BLACKDUCK_URL: https://jda.blackducksoftware.com/
+      BLACKDUCK_APITOKEN: ${{ secrets.EXEC_ECOM_BLACKDUCK_APITOKEN }}
+      DEPLOYMENT_NOTIFICATION_URL: https://api.github.com/repos/JDA-Product-Development/exec-ecom-azure-deployment/dispatches
+      DEPLOYMENT_NOTIFICATION_URL_TOKEN: ${{ secrets.EXEC_ECOM_DEPLOYMENTS_PAT }}
+      RELEASE_USER: svc-github-prd-by
+      RELEASE_TOKEN: ${{ secrets.EXEC_ECOM_DEPLOYMENTS_PAT }}
+      STRATOSPHERE_ACR_NAME: ob6b3kadl16b3pr40oawi0cx
+      STRATOSPHERE_ACR_URL: ob6b3kadl16b3pr40oawi0cx.azurecr.io
+      STRATOSPHERE_ENV_PREFIX: stratosphere-
+      AZ_SX_SPN_CLIENT: ${{ secrets.EXEC_ECOM_AZ_SANDBOX_SPN_CLIENT_ID }}
+      AZ_SX_SPN_SECRET: ${{ secrets.EXEC_ECOM_AZ_SANDBOX_SPN_CLIENT_SECRET }}
+      AZ_SX_TENANT_ID: ${{ secrets.EXEC_ECOM_AZ_JDADELIVERS_TENANT_ID }}
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+          token: ${{ env.RELEASE_TOKEN }}
+      - run: git fetch origin +refs/tags/*:refs/tags/*
+
+      - name: Set up JDK
+        uses: actions/setup-java@v1
+        with:
+          java-version: 11
+
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Build with Gradle
+        run: ./gradlew build
+
+      - name: Run codacy-coverage-reporter
+        uses: codacy/codacy-coverage-reporter-action@v1
+        with:
+          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
+          coverage-reports: service/build/reports/jacoco/test/jacocoTestReport.xml
+
+      - name: Release Version
+        run: |
+          ./gradlew release -Prelease.pushTagsOnly
+          release_version=$(./gradlew -q printVersion)
+          echo "RELEASE_VERSION=${release_version}" >> $GITHUB_ENV
+          ./gradlew bootJar artifactoryPublish
+
+      - name: Release
+        uses: ncipollo/release-action@v1
+        with:
+          name: ${{ env.SERVICE_NAME }}:${{ env.RELEASE_VERSION }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag: release-${{ env.RELEASE_VERSION }}
+
+      - uses: azure/docker-login@v1
+        with:
+          login-server: ecomdeploymentacr.azurecr.io
+          username: ${{ secrets.EXEC_ECOM_ACR_USERNAME }}
+          password: ${{ secrets.EXEC_ECOM_ACR_PASSWORD }}
+
+      - name: Publish To ECOM ACR
+        run: |
+          echo Publishing to $ACR_PATH:$RELEASE_VERSION
+          docker build . --build-arg RELEASE_VERSION=$RELEASE_VERSION -t $ACR_PATH:$RELEASE_VERSION
+          docker tag $ACR_PATH:$RELEASE_VERSION $ACR_PATH:latest
+          docker push $ACR_PATH:$RELEASE_VERSION
+          docker push $ACR_PATH:latest
+
+      - uses: azure/docker-login@v1
+        with:
+          login-server: $STRATOSPHERE_ACR_URL
+          username: $AZ_SX_SPN_CLIENT
+          password: $AZ_SX_SPN_SECRET
+
+      - name: Publish To SX ACR
+        run: |
+          az login --service-principal --username $AZ_SX_SPN_CLIENT --password $AZ_SX_SPN_SECRET --tenant $AZ_SX_TENANT_ID
+          az acr login --name $STRATOSPHERE_ACR_NAME
+          echo Publishing to $STRATOSPHERE_ACR_URL/$SERVICE_NAME:$RELEASE_VERSION
+          docker build . --build-arg RELEASE_VERSION=$RELEASE_VERSION -t  $STRATOSPHERE_ACR_URL/$SERVICE_NAME:$RELEASE_VERSION
+          docker tag $STRATOSPHERE_ACR_URL/$SERVICE_NAME:$RELEASE_VERSION $STRATOSPHERE_ACR_URL/$SERVICE_NAME:latest
+          docker push  $STRATOSPHERE_ACR_URL/$SERVICE_NAME:$RELEASE_VERSION
+          docker push $STRATOSPHERE_ACR_URL/$SERVICE_NAME:latest
+
+      - uses: azure/setup-helm@v1
+        with:
+          version: '3.2.1'
+        id: install
+
+      - name: Helm Publish
+        run: |
+          helm lint
+          helm package . --app-version $RELEASE_VERSION --version $RELEASE_VERSION
+          curl -u $HELM_PUBLISH_USER:$HELM_PUBLISH_PASSWORD -X PUT $HELM_PUBLISH_URL/$SERVICE_NAME-$RELEASE_VERSION.tgz -T $SERVICE_NAME-$RELEASE_VERSION.tgz -f
+        working-directory: helm/${{ env.SERVICE_NAME }}
+
+      - name: Notify Deployment Repo
+        run: |
+          AUTH_HEADER="Authorization: token $DEPLOYMENT_NOTIFICATION_URL_TOKEN"
+          PAYLOAD='{ "event_type": "deploy_service", "client_payload": { "service": "'"$SERVICE_NAME"'", "version": "'"$RELEASE_VERSION"'" }}'
+          curl --request POST "$DEPLOYMENT_NOTIFICATION_URL" --header "$AUTH_HEADER" --header "Content-Type: application/json" --data-raw "$PAYLOAD" -f -i
+
+      - name: BlackDuck Hub Scan
+        uses: blackducksoftware/github-action@v2.2
+        with:
+          version: 7
+          blackduck.url: ${{ env.BLACKDUCK_URL }}
+          blackduck.api.token: ${{ env.BLACKDUCK_APITOKEN }}
+          args: '--detect.project.name=logistics-exec-ecom-$SERVICE_NAME
+          --detect.project.version.name=master
+          --detect.excluded.detector.types=npm
+          --detect.blackduck.signature.scanner.upload.source.mode=false
+          --detect.blackduck.signature.scanner.exclusion.pattern.search.depth=0
+          --detect.tools.excluded=SIGNATURE_SCAN
+          --detect.project.tags=Execution,ECommerce,Logistics
+          --detect.wait.for.results=false
+          --detect.risk.report.pdf=false
+          --detect.npm.include.dev.dependencies=false
+          --detect.gradle.path=./gradlew
+          --detect.gradle.excluded.configurations=test*,integrationTest*
+          --detect.report.timeout=30
+          --detect.project.codelocation.unmap=true'
+
+  corp-quality-tools:
+    runs-on: [self-hosted, ldf]
+    timeout-minutes: 60
+    env:
+      ORG_GRADLE_PROJECT_artifactory_user: ${{ secrets.EXEC_ECOM_ARTIFACTORY_USERNAME }}
+      ORG_GRADLE_PROJECT_artifactory_password: ${{ secrets.EXEC_ECOM_ARTIFACTORY_PASSWORD }}
+      SERVICE_NAME: exec-ud-daas-etl-service
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - name: Set up JDK
+        uses: actions/setup-java@v1
+        with:
+          java-version: 11
+      - name: SonarQube
+        env:
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+        run: ./gradlew build -x integrationTest sonarqube
+          -Dsonar.host.url=${{ secrets.EXEC_ECOM_SONAR_DEV_SERVICE_URL }}
+          -Dsonar.login=${{ secrets.EXEC_ECOM_SONAR_KEY }}
+          -Dsonar.branch.autoconfig.disabled=true
+      - name: Checkmarx Action
+        env:
+          DS_CHECKMARX_USER: ${{ secrets.DS_CHECKMARX_USER }}
+          DS_CHECKMARX_PASSWORD: ${{ secrets.DS_CHECKMARX_PASSWORD }}
+          DS_CHECKMARX_SERVICE_URL: ${{ secrets.DS_CHECKMARX_SERVICE_URL }}
+          CX_DOWNLOAD_URL: https://download.checkmarx.com/9.0.0/Plugins/CxConsolePlugin-2021.1.1.zip
+          CX_TEAM: \CxServer\SP\JDA\SCExecution\ECommerce
+        run: |
+          curl -s $CX_DOWNLOAD_URL -L -o cxcli.zip
+          unzip -q cxcli.zip -d cxcli
+          chmod +x cxcli/runCxConsole.sh
+          cxcli/runCxConsole.sh AsyncScan \
+            -CxServer $DS_CHECKMARX_SERVICE_URL \
+            -CxUser $DS_CHECKMARX_USER \
+            -CxPassword $DS_CHECKMARX_PASSWORD \
+            -ProjectName "$CX_TEAM\exec-ecom-$SERVICE_NAME-master" \
+            -LocationType folder \
+            -LocationPath $GITHUB_WORKSPACE \
+            -LocationPathExclude "cxcli,test,tests,integration-test,mock,mocks,spec,unit,debug,e2e,androidTest,build,dist,deploy,venv,maven,gradle,target,example,examples,samples,bin,gen,out,docs,proguard,lint,images,swagger,coverage,generated,.vs,.idea,.temp,.tmp,.grunt,.cache,.dynamodb,.fusebox,.serverless,.nyc_output,.git,.github,.dependabot,.semaphore,.circleci,.vscode,.nuget,.mvn,.m2,.DS_Store,.sass-cache,.gradle,__pycache__,.pytest_cache,.settings,res/color*,res/drawable*,res/mipmap*,res/anim*,*imageset,xcuserdata,xcshareddata,*xcassets,*appiconset,*xcodeproj,*framework,*lproj,__MACOSX,css,react,yui,node_modules,jquery*,angular*,bootstrap*,modernizr*,bower_components,jspm_packages,typings,dojo,package,packages,vendor,xjs" \
+            -LocationFilesExclude "*.min.js,*.spec,*.spec.*,*Test.*,Test*,test*,*Mock*,Mock*,*.gradle" \
+            -Incremental \
+            -v

@@ -1,0 +1,226 @@
+openapi: 3.0.0
+info:
+  description: This is an example API from Luminate Digital Fulfillment's Exec Ud
+    Daas Etl Service.
+  title: Luminate Digital Fulfillment Exec Ud Daas Etl Service Example
+  version: 1.0.0
+servers:
+- url: http://localhost:8080/
+tags:
+- description: Exec Ud Daas Etl Service
+  name: exec-ud-daas-etl-service
+paths:
+  /foos:
+    get:
+      operationId: listFoos
+      parameters:
+      - description: The specific page of data to return. The size of this page is
+          determined by the pageSize parameter.
+        in: query
+        name: pageNumber
+        schema:
+          default: 0
+          format: int32
+          minimum: 0
+          type: integer
+      - description: The maximum number of entries to return.
+        in: query
+        name: pageSize
+        schema:
+          default: 50
+          format: int32
+          minimum: 1
+          type: integer
+      - description: The fulfillment center identifier of data to return.
+        in: query
+        name: fulfillmentCenterId
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedFoos'
+          description: A list of Foos
+      summary: Gets the Foos able to be gotten
+      tags:
+      - foos
+    post:
+      operationId: createFoo
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Foo'
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Foo'
+          description: The created Foo
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Errors'
+          description: All error responses share this common structure.
+      summary: Creates a Foo
+      tags:
+      - foos
+  /egress/{entityType}:
+    post:
+      description: |-
+        This endpoint is used to mock a customer endpoint that would receive the egress payload. The
+        payload received by this endpoint is logged to the log file so developers can confirm delivery.
+      operationId: receiveEgress
+      parameters:
+      - description: The entity type that is being sent such as DespatchAdvice or
+          ReceivingAdvice.
+        explode: false
+        in: path
+        name: entityType
+        required: true
+        schema:
+          type: string
+        style: simple
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+      responses:
+        "204":
+          description: "If successful, no content is returned."
+        default:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Errors'
+          description: All error responses share this common structure.
+      summary: Endpoint use to receive payload for egress workflows.
+      tags:
+      - egress
+components:
+  schemas:
+    Foo:
+      example:
+        bar: bar
+        fulfillmentCenterId: fulfillmentCenterId
+        id: id
+      properties:
+        id:
+          type: string
+        bar:
+          type: string
+        fulfillmentCenterId:
+          type: string
+      type: object
+    PagedFoos:
+      example:
+        entities:
+        - bar: bar
+          fulfillmentCenterId: fulfillmentCenterId
+          id: id
+        - bar: bar
+          fulfillmentCenterId: fulfillmentCenterId
+          id: id
+        meta:
+          page:
+            pageNumber: 6
+            pageSize: 1
+            totalCount: 0
+        count: 5
+      properties:
+        meta:
+          $ref: '#/components/schemas/Meta'
+        count:
+          format: int32
+          type: integer
+        entities:
+          items:
+            $ref: '#/components/schemas/Foo'
+          type: array
+      type: object
+    Errors:
+      description: Contains information about errors that occurred during the handling
+        of a particular request
+      properties:
+        status:
+          description: The http status associated with this error response
+          type: number
+        responseId:
+          description: a correlation/trace ID for the response used to remove uncertainty
+            in support ticket-to-log message correlation
+          type: string
+        timestamp:
+          format: date-time
+          type: string
+        errors:
+          items:
+            $ref: '#/components/schemas/Error'
+          type: array
+      type: object
+    Error:
+      description: |-
+        Information about a specific error that occurred on the server while attempting to handle a request.
+        A single request may result in multiple errors being returned.
+      properties:
+        errorCode:
+          description: A string unique to each logical error in a Module (meaning
+            two different userMessages SHOULD NOT have the  same errorCode).
+          type: string
+        userMessage:
+          description: A localized user-friendly message that describes the error
+            that occurred.
+          type: string
+        devMessage:
+          description: |-
+            An error message meant for development and debugging purposes.
+            This message (if populated) should not be displayed to a user.
+          type: string
+        devInfo:
+          additionalProperties: true
+          description: This map contains additional properties related to the error
+            that may be helpful in recovering from the error and/or provide additional
+            context.
+          type: object
+        moreInfo:
+          description: An optional URL that provides additional information about
+            the error
+          type: string
+    Meta:
+      example:
+        page:
+          pageNumber: 6
+          pageSize: 1
+          totalCount: 0
+      properties:
+        page:
+          $ref: '#/components/schemas/PageMeta'
+      type: object
+    PageMeta:
+      description: Contains information about a 'page' of entities returned in a response
+      example:
+        pageNumber: 6
+        pageSize: 1
+        totalCount: 0
+      properties:
+        totalCount:
+          description: |-
+            The total number of records available across all pages.
+            This value may not be populated if the total count cannot be determined or it is inefficient to do so.
+          format: int64
+          type: integer
+        pageNumber:
+          description: The page number to which the returned entities belong.
+          format: int32
+          type: integer
+        pageSize:
+          description: "The size of the page.\nNote: the actual count returned may\
+            \ be less than this value if there are not enough entities available to\
+            \ be returned."
+          format: int32
+          type: integer
+      type: object

@@ -1,0 +1,42 @@
+name: Cleanup Pull Request Snapshots
+
+on:
+  pull_request:
+    types: [closed]
+
+env:
+  HELM_PUBLISH_URL: https://jdasoftware.jfrog.io/jdasoftware/helm-release-local/ecom/exec-ud-daas-etl-service
+  HELM_PUBLISH_USER: ${{ secrets.EXEC_ECOM_ARTIFACTORY_USERNAME }}
+  HELM_PUBLISH_PASSWORD: ${{ secrets.EXEC_ECOM_ARTIFACTORY_PASSWORD }}
+  ACR_API_PATH: https://ecomdeploymentacr.azurecr.io/v2
+  ACR_USER: ${{ secrets.EXEC_ECOM_ACR_USERNAME }}
+  ACR_PASSWORD: ${{ secrets.EXEC_ECOM_ACR_PASSWORD }}
+  SERVICE_NAME: exec-ud-daas-etl-service
+  SNAPSHOT_VERSION: ${{ format('{0}-SNAPSHOT', github.event.number) }}
+  SX_ACR_USER: ${{ secrets.EXEC_ECOM_AZ_SANDBOX_SPN_CLIENT_ID }}
+  SX_ACR_PASSWORD: ${{ secrets.EXEC_ECOM_AZ_SANDBOX_SPN_CLIENT_SECRET }}
+  SX_ACR_API_PATH: https://ob6b3kadl16b3pr40oawi0cx.azurecr.io/v2
+
+jobs:
+  closed-pr-cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Clean up Artifactory
+        run: curl -u $HELM_PUBLISH_USER:$HELM_PUBLISH_PASSWORD -X DELETE $HELM_PUBLISH_URL/$SERVICE_NAME-$SNAPSHOT_VERSION.tgz
+
+#     This process requires a the following steps to delete the image from the registry.
+#     1. The manifest ID must be found for the image itself. This is accomplished by using a GET request to the /manifest/
+#     endpoint. This REQUIRES the Accept header to be set, otherwise the manifest returned will be incorrect (see https://docs.docker.com/registry/spec/api/#deleting-an-image)
+#     2. The manifest can then be used in the delete request
+#     Follow the following link for a further discussion on this process: https://github.com/docker/distribution/issues/1566#issuecomment-205484205
+      - name: Clean up ECOM ACR
+        run: |
+          PR_IMAGE_MANIFEST=$(curl -sD - -o /dev/null -u "$ACR_USER:$ACR_PASSWORD" "$ACR_API_PATH/$SERVICE_NAME/manifests/$SNAPSHOT_VERSION" --header 'Accept: application/vnd.docker.distribution.manifest.v2+json' | awk '$1 == "Docker-Content-Digest:" { print $2 }' | tr -d $'\r')
+          curl --request DELETE -u "$ACR_USER:$ACR_PASSWORD" "$ACR_API_PATH/$SERVICE_NAME/manifests/$PR_IMAGE_MANIFEST"
+          
+      - name: Clean up SX ACR
+        run: |
+          PR_IMAGE_MANIFEST=$(curl -sD - -o /dev/null -u "$SX_ACR_USER:$SX_ACR_PASSWORD" "$SX_ACR_API_PATH/$SERVICE_NAME/manifests/$SNAPSHOT_VERSION" --header 'Accept: application/vnd.docker.distribution.manifest.v2+json' | awk '$1 == "Docker-Content-Digest:" { print $2 }' | tr -d $'\r')
+          curl --request DELETE -u "$SX_ACR_USER:$SX_ACR_PASSWORD" "$SX_ACR_API_PATH/$SERVICE_NAME/manifests/$PR_IMAGE_MANIFEST"

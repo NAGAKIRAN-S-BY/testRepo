@@ -1,0 +1,30 @@
+execution:
+  concurrency: ${test-foo.concurrency}
+  ramp-up: ${test-foo.ramp-up}
+  iterations: ${test-foo.iterations}
+  scenario: main
+
+scenarios:
+  main:
+    think-time: gaussian(500ms, 200ms)
+    script: files/test-foo.jmx
+    properties:
+      base_url: http://localhost:8080/v1
+
+reporting:
+  - module: final-stats
+    summary: true
+    percentiles: false
+    summary-labels: false
+    failed-labels: true
+    test-duration: true
+    dump-csv: build/test-foo-results.csv
+  - module: passfail
+    criteria:
+      Too Many Errors: fail>20% over 10s, stop as failed
+
+settings:
+  artifacts-dir: build/test-foo_%H_%M_%S
+
+included-configs:
+  - common/jmeter.yaml

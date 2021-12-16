@@ -1,0 +1,47 @@
+plugins {
+    id 'com.avast.gradle.docker-compose' version '0.14.9'
+}
+
+def props = project.getProperties()
+
+// These properties can be overridden via the command line (e.g. -PbztEnvFile=dev.yaml)
+def bztEnvFile = props.get('bztEnvFile')
+def bztTenant = props.get('bztTenant')
+def dbPrefix = props.get('dbPrefix')
+
+def dbName = "${dbPrefix}_${bztTenant}"
+
+apply from: 'common/performance-common.gradle'
+
+task bztInit {
+    dependsOn 'composeUp'
+    mustRunAfter 'composeUp'
+    doLast {
+        // run init jmeter test to initialize data
+        bzt('init.yaml', bztEnvFile, bztTenant)
+
+        // load manual sql
+        def sqlServerContainerId = dockerCompose.servicesInfos.mssql.firstContainer.containerId
+        initSql(sqlServerContainerId, dbName, 'files/sample-foos.sql')
+    }
+}
+
+task bztAll {
+    dependsOn 'bztTestFoo'
+}
+
+task bztTestFoo {
+    doLast { bzt('test-foo.yaml', bztEnvFile, bztTenant) }
+}
+
+task bztDBUpload {
+    doLast {
+        uploadDB(dbName)
+    }
+}
+
+task bztDBRefresh {
+    doLast {
+        refreshDB(dbName)
+    }
+}

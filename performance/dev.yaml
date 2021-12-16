@@ -1,0 +1,14 @@
+# Dev environment overrides for load testing
+settings:
+  env:
+    default.concurrency: 1
+    default.ramp-up: 0
+    default.iterations: 1
+    test-foo.concurrency: ${default.concurrency}
+    test-foo.ramp-up: ${default.ramp-up}
+    test-foo.iterations: ${default.iterations}
+
+reporting:
+  - module: passfail
+    criteria:
+      No Errors: fail>=1, stop as failed

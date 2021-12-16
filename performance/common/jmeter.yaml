@@ -1,0 +1,15 @@
+# common JMeter configuration for all tests
+settings:
+  check-interval: 5s
+  default-executor: jmeter
+
+modules:
+  jmeter:
+    version: 5.3
+    detect-plugins: false
+    download-link: https://ecomblobstorage.blob.core.windows.net/jmeter/apache-jmeter-{version}.zip
+    properties:
+      log_level.jmeter: ERROR
+      jpgc.repo.address: https://ecomblobstorage.blob.core.windows.net/jmeter-plugins/jpgc-plugins.json;https://ecomblobstorage.blob.core.windows.net/jmeter-plugins/plugins-repo.json
+    plugins:
+      - by-pepper-box

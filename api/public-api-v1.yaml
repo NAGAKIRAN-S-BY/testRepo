@@ -1,0 +1,99 @@
+# This Open API Specification file contains a list of APIs that will be registered with the public BY API gateway.
+# The API documentation will also be published to the customer facing developer portal.
+openapi: 3.0.0
+info:
+  description: This is an example API from Luminate Digital Fulfillment's Exec Ud Daas Etl Service.
+  version: 1.0.0
+  title: Luminate Digital Fulfillment Exec Ud Daas Etl Service Example
+tags:
+  - name: exec-ud-daas-etl-service
+    description: Exec Ud Daas Etl Service
+servers:
+  - url: http://localhost:8080/
+paths:
+
+  /foos:
+    get:
+      operationId: listFoos
+      summary: Gets the Foos able to be gotten
+      tags:
+        - foos
+      parameters:
+        - $ref: 'shared-definitions.yaml#/components/parameters/pageNumber'
+        - $ref: 'shared-definitions.yaml#/components/parameters/pageSize'
+        - $ref: 'shared-definitions.yaml#/components/parameters/fulfillmentCenterId'
+      responses:
+        200:
+          description: A list of Foos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedFoos'
+    post:
+      operationId: createFoo
+      summary: Creates a Foo
+      tags:
+        - foos
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Foo'
+      responses:
+        200:
+          description: The created Foo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Foo'
+        default:
+          $ref: 'shared-definitions.yaml#/components/responses/ErrorResponse'
+  /egress/{entityType}:
+    post:
+      operationId: receiveEgress
+      summary: Endpoint use to receive payload for egress workflows.
+      description: |-
+        This endpoint is used to mock a customer endpoint that would receive the egress payload. The
+        payload received by this endpoint is logged to the log file so developers can confirm delivery.
+      tags:
+        - egress
+      parameters:
+        - in: path
+          name: entityType
+          schema:
+            type: string
+          required: true
+          description: The entity type that is being sent such as DespatchAdvice or ReceivingAdvice.
+      requestBody:
+        content:
+          application/json:
+            schema: {}
+      responses:
+        204:
+          description: If successful, no content is returned.
+        default:
+          $ref: 'shared-definitions.yaml#/components/responses/ErrorResponse'
+components:
+  schemas:
+    Foo:
+      type: object
+      properties:
+        id:
+          type: string
+        bar:
+          type: string
+        fulfillmentCenterId:
+          type: string
+    PagedFoos:
+      type: object
+      properties:
+        meta:
+          $ref: 'shared-definitions.yaml#/components/schemas/Meta'
+        count:
+          type: integer
+          format: int32
+        entities:
+          type: array
+          items:
+            $ref: '#/components/schemas/Foo'
+

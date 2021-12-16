@@ -1,0 +1,24 @@
+product:
+  name: ldf
+  api:
+    name: exec-ud-daas-etl-service
+    description: Exec Ud Daas Etl Service APIs
+    uri: ldf/exec-ud-daas-etl
+    version:
+      - name: v1
+        scope:
+          - by.ecom.all
+        description: Exec Ud Daas Etl Service v1
+        oasLocation: ./exec-ud-daas-etl-service-public-api-v1.yaml
+        backend:
+          dev: ./backend/uri_backend-v1.yaml
+          tst: ./backend/uri_backend-v1.yaml
+          prd: ./backend/uri_backend-v1.yaml
+      - name: v1-dev
+        scope:
+          - by.ecom.all
+        description: Exec Ud Daas Etl Service v1-dev
+        oasLocation: ./exec-ud-daas-etl-service-public-api-v1-dev.yaml
+        backend:
+          dev: ./backend/uri_backend-v1-dev.yaml
+          tst: ./backend/uri_backend-v1-dev.yaml

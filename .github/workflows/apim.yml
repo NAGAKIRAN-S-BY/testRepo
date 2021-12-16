@@ -1,0 +1,188 @@
+name: Sync Public API in APIM
+
+on:
+  workflow_run:
+    workflows: [ "Release New Version" ]
+    branches: [ master ]
+    types:
+      - completed
+
+jobs:
+  check-apim-changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    if: github.event.workflow_run.conclusion == 'success'
+    outputs:
+      path_changed: ${{ steps.apim-path-change.outputs.path_changed }}
+
+    steps:
+      # Checkout the service repository which contains the updated API specification
+      - name: Checkout service source
+        uses: actions/checkout@v2
+        with:
+          path: service
+          fetch-depth: 0
+
+      - name: Check for APIM path change
+        uses: marceloprado/has-changed-path@v1
+        id: changed-apim
+        with:
+          paths: api/apim
+        env:
+          SOURCE: service
+
+      - name: Set output for if APIM path changed
+        id: apim-path-change
+        run: |
+          echo ::set-output name=path_changed::${{ steps.changed-apim.outputs.changed }}
+
+  sync-public-api:
+    runs-on: ubuntu-latest
+    needs: check-apim-changes
+    timeout-minutes: 60
+    if: github.event.workflow_run.conclusion == 'success' && needs.check-apim-changes.outputs.path_changed == 'true'
+
+    env:
+      # Artifactory credentials to be able to run gradlew commands.
+      ORG_GRADLE_PROJECT_artifactory_user: ${{ secrets.EXEC_ECOM_ARTIFACTORY_USERNAME }}
+      ORG_GRADLE_PROJECT_artifactory_password: ${{ secrets.EXEC_ECOM_ARTIFACTORY_PASSWORD }}
+      # Service name being update - used to name the branch and identify the path in the API registry containing the API to update.
+      SERVICE_NAME: exec-ud-daas-etl-service
+      # Path in the service repository containing the files that need to be synchronized with APIM.  This same path should be in the workflow's path filter.
+      PATH_TO_SERVICE_APIM_FILES: api/apim
+      # Personal Access Token that can be used to checkout and contribute to the APIM repository.
+      APIM_REPO_TOKEN: ${{ secrets.EXEC_ECOM_DEPLOYMENTS_PAT }}
+      # Product name in the APIM repository containing the service API being updated.
+      APIM_PRODUCT: ldf
+      # Name to use as the author of the commit.
+      GIT_AUTHOR: LDF API Update
+      # Email address to use for the author of the commit.
+      GIT_EMAIL: github-action-pr-bot@github.com
+      # Ensure a common branch name prefix for each update to use.
+      BRANCH_NAME_PREFIX: feat/ldf_exec-ud-daas-etl-service
+
+    steps:
+
+      # Checkout the service repository which contains the updated API specification
+      - name: Checkout service source
+        uses: actions/checkout@v2
+        with:
+          path: service
+          fetch-depth: 0
+
+      - name: Set up JDK
+        uses: actions/setup-java@v1
+        with:
+          java-version: 11
+
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Find latest released version
+        run: |
+          released_version=$(./gradlew -q printVersion)
+          echo "RELEASED_VERSION=${released_version}" >> $GITHUB_ENV
+        working-directory: service
+
+      # Checkout the API registry so that we can synchronize the API changes
+      - name: Checkout API registry
+        uses: actions/checkout@v2
+        with:
+          path: apim
+          repository: JDA-Product-Development/plat-apim-api-registry
+          ref: master
+          fetch-depth: 0
+          token: ${{ env.APIM_REPO_TOKEN }}
+
+      # We use yq to do some touch-up to the OAS files.
+      - name: Install yq
+        run: |
+          sudo wget -O /usr/local/bin/yq https://github.com/mikefarah/yq/releases/download/3.3.2/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      # APIM registry repo has a validation step that checks for the presence of server section in OAS spec.  This step
+      # assumes the only files present are metadata.yaml and API specifications.
+      - name: Patch up the OAS specs
+        run: |
+          for i in `find $PATH_TO_SERVICE_APIM_FILES -type f -regextype egrep -iregex \.\*\\.\(json\|yaml\)`; do
+            case $i in
+              */metadata.yaml)
+                ;;
+              */*.yaml)
+                yq d -i $i servers
+                yq w -i $i "info.version" ${{ env.RELEASED_VERSION }}
+                ;;
+              */*.json)
+                yq d -i --tojson --prettyPrint $i servers
+                ;;
+            esac
+          done
+        working-directory: service
+
+      # Sync the modified specification with APIM.
+      - name: Update Public API for service
+        run: |
+          cp  -R ./$PATH_TO_SERVICE_APIM_FILES/* ../apim/products/$APIM_PRODUCT/$SERVICE_NAME
+        working-directory: service
+
+      # Sync only the v1-dev api's specification with APIM.
+#      - name: Update Public Dev API for service
+#        run: |
+#          shopt -s extglob
+#          find ./$PATH_TO_SERVICE_APIM_FILES -type f | while read fname; do
+#            dirname=`dirname "$fname"`
+#            fullfilename=`basename "$fname"`
+#            extension="${fullfilename##*.}"
+#            filename="${fullfilename%.*}"
+#            if [[ $fullfilename == +(*api-v+([0-9]).yaml) ]]; then
+#              mv "$dirname"/"$fullfilename" "$dirname"/"$filename-dev.$extension"
+#            fi
+#          done
+#          cp  -R ./$PATH_TO_SERVICE_APIM_FILES/* ../apim/products/$APIM_PRODUCT/$SERVICE_NAME
+#          shopt -u extglob
+#        working-directory: service
+
+      # If git detects changes, steps.check-for-diff.outputs.GIT_STATUS will not be empty.
+      - name: Check for diff in APIM
+        id: check-for-diff
+        run: |
+          echo ::set-output name=GIT_STATUS::$(git status --porcelain=1)
+        working-directory: apim
+
+      # If changes are present, git them to a branch.  This step will commit modifications and add new files, too.
+      - name: Commit updated API
+        if: steps.check-for-diff.outputs.GIT_STATUS != ''
+        uses: EndBug/add-and-commit@v4.4.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.EXEC_ECOM_DEPLOYMENTS_PAT }}
+        with:
+          author_name: ${{ env.GIT_AUTHOR }}
+          author_email: ${{ env.GIT_EMAIL }}
+          message: Update ${{ env.SERVICE_NAME }} API from commit ${{ github.event.after }} - Version ${{ env.RELEASED_VERSION }}
+          ref: ${{ env.BRANCH_NAME_PREFIX }}_${{ env.RELEASED_VERSION }}
+          cwd: apim
+
+      # Create a PR against the API registry for the updated specification.  The URL of the pull request is returned by this step and can be
+      # access using steps.apim-pr.outputs.result.  This could be used as part of a notification strategy (comment on original PR, notify
+      # through MS Teams, etc.)
+      - name: Create PR for updated API
+        id: apim-pr
+        if: steps.check-for-diff.outputs.GIT_STATUS != ''
+        uses: actions/github-script@v2.0.1
+        with:
+          github-token: ${{ env.APIM_REPO_TOKEN }}
+          script: |
+            const pr = await github.pulls.create({
+              owner: 'JDA-Product-Development',
+              repo: 'plat-apim-api-registry',
+              title: '[LDF] Update ${{ env.SERVICE_NAME }} API - Version ${{ env.RELEASED_VERSION }}',
+              head: '${{ env.BRANCH_NAME_PREFIX }}_${{ env.RELEASED_VERSION }}',
+              base: 'master'
+            });
+            return pr.url;

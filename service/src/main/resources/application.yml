@@ -1,0 +1,166 @@
+spring:
+  application.name: exec-ud-daas-etl-service
+  profiles.active: dev
+  zipkin.enabled: false
+  sleuth:
+    baggage.remote-fields: ${SPRING_SLEUTH_HEADERS:}
+    propagation.tag.whitelisted-keys: ${SPRING_SLEUTH_HEADERS:}
+
+logging:
+  level:
+    root: info
+    com.blueyonder: debug
+    org.apache.kafka.clients.NetworkClient: error
+    com.blueyonder.service.common.liam.security: error
+  pattern: '%d{ABSOLUTE} [%X{X-B3-TraceId}/%X{X-B3-SpanId}] %-5p [%t] %C{2} - %m%n'
+
+# Actuator endpoint Configuration
+management.health.db.enabled: false
+management.endpoint.health.probes.enabled: true
+management.health.livenessstate.enabled: true
+management.health.readinessstate.enabled: true
+management.endpoints.web.exposure.include: env,health,info,loggers,metrics,threaddump
+
+---
+# Profile for standard development environment
+spring:
+  profiles: dev
+  h2.console.enabled: true
+  liquibase.enabled: true
+  jpa:
+    properties:
+      hibernate.show_sql: true
+
+logging:
+  level:
+    com.blueyonder: debug
+    org.hibernate.SQL: debug                  # Output queries (debug)
+    org.hibernate.type.descriptor.sql: off    # Output bound parameter values (trace)
+    org.hibernate.engine.transaction: debug   # Output transactional boundaries (debug)
+
+#Disable LIAM checks in dev profile
+ecom.security.liam.enabled: false
+
+---
+# Profile to run against a local sql database with the multi-tenancy library
+# Change spring profile to dev-sql and run sql server using:
+# docker run --rm -e "ACCEPT_EULA=Y" -e "SA_PASSWORD=P@ssword01" -p 1433:1433 -d mcr.microsoft.com/mssql/server:2019-latest
+spring:
+  profiles: dev-sql
+  liquibase.enabled: true
+  h2.console.enabled: false
+
+  datasource:
+    url: jdbc:sqlserver://localhost:1433
+    username: sa
+    password: P@ssword01
+  jpa:
+    properties:
+      hibernate:
+        default_schema: exec_ud_daas_etl_service
+multitenant:
+  provisioning:
+    database:
+      template: IF ((select count(*) from sys.databases where name = N'{database_name}') = 0) BEGIN CREATE DATABASE [{database_name}] ALTER DATABASE [{database_name}] SET READ_COMMITTED_SNAPSHOT ON END;
+  datasource:
+    url:
+      template: ${spring.datasource.url};databaseName=ecom_{tenant_id}
+
+ecom:
+  security:
+    liam:
+      # Disabled until access checks are available and user policies are configured
+      access.site.enabled: false
+      rbac:
+        enabled: true
+        enable-mock-service: true
+        mock-permissions: [by.ldf.starter.view, by.ldf.starter.manage]
+      abac:
+        mock-policies: ['{"@type":"FaaS-Data-Policy","site":"FC1"}']
+
+---
+spring:
+  profiles: int-sql
+  liquibase.enabled: true
+  h2.console.enabled: false
+
+  datasource:
+    url: jdbc:sqlserver://localhost:1533
+    username: sa
+    password: P@ssword01
+  jpa:
+    properties:
+      hibernate:
+        default_schema: exec_ud_daas_etl_service
+multitenant:
+  provisioning:
+    database:
+      template: IF ((select count(*) from sys.databases where name = N'{database_name}') = 0) BEGIN CREATE DATABASE [{database_name}] ALTER DATABASE [{database_name}] SET READ_COMMITTED_SNAPSHOT ON END;
+  datasource:
+    url:
+      template: ${spring.datasource.url};databaseName=ecom_{tenant_id}
+
+ecom:
+  security:
+    liam:
+      # Disabled until access checks are available and user policies are configured
+      access.site.enabled: false
+      rbac:
+        enabled: true
+        enable-mock-service: true
+        mock-permissions: [by.ldf.starter.view, by.ldf.starter.manage]
+      abac:
+        mock-policies: ['{"@type":"FaaS-Data-Policy","site":"FC1"}']
+
+---
+spring:
+  profiles: prod
+  liquibase.enabled: true
+  h2.console.enabled: false
+  datasource:
+    url: jdbc:sqlserver://${DB_HOST}:${DB_PORT:1433};encrypt=true;trustServerCertificate=false;hostNameInCertificate=*.database.windows.net;loginTimeout=30;
+    username: ${administrator-login-username}
+    password: ${administrator-login-password}
+    hikari.register-mbeans: true
+  jpa:
+    properties:
+      hibernate:
+        default_schema: exec_ud_daas_etl_service
+  zipkin:
+    base-url: ${ZIPKIN_BASE_URL:http://zipkin:9411}
+    sender:
+      type: web
+    enabled: true
+  sleuth:
+    sampler:
+      probability: "1.0"
+  boot:
+    admin:
+      client:
+        url: ${SPRING_BOOT_ADMIN_BASE_URL:http://spring-boot-admin:8080}
+        instance:
+          prefer-ip: true
+multitenant:
+  datasource:
+    url:
+      template: ${spring.datasource.url};databaseName=ecom_{tenant_id}
+  provisioning.enabled: false
+
+ecom:
+  security:
+    liam:
+      # Disabled until access checks are available and user policies are configured
+      access.site.enabled: false
+      rbac.enabled: true
+      # TODO: Enable the user policy and site configurations once we are all good with multi-site support across all services
+      access:
+        site:
+          enabled: false
+    configuration:
+      user.policy.enabled: false
+
+# Provide environment variable fallback support for key vault properties
+administrator-login-username: ${DB_USER}
+administrator-login-password: ${DB_PASSWORD}
+
+server.error.include-stacktrace: never

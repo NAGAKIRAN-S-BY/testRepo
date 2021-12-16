@@ -1,0 +1,6 @@
+apiVersion: v2
+name: exec-ud-daas-etl-service
+description: Exec Ud Daas Etl Service
+type: application
+version: 0.1.0
+appVersion: 0.1.0

@@ -1,0 +1,51 @@
+sourceSets {
+    integrationTest {
+        java {
+            compileClasspath += main.output + test.output
+            runtimeClasspath += main.output + test.output
+            srcDir file('src/integration-test/java')
+        }
+    }
+}
+
+dockerRun {
+    name 'dockerRun-sql-test-container'
+    clean true
+    image 'mcr.microsoft.com/mssql/server:2019-latest'
+    ports '1533:1433'
+    env 'ACCEPT_EULA': 'Y', 'SA_PASSWORD': 'P@ssword01'
+}
+
+configurations {
+    integrationTestCompile.extendsFrom testImplementation
+    integrationTestRuntime.extendsFrom testRuntime
+}
+
+task integrationTest(type: Test) {
+    systemProperty 'integrationTestProfile', project.ext.integrationTestProfile
+    description = 'Runs the integration tests.'
+    group = 'verification'
+    testClassesDirs = sourceSets.integrationTest.output.classesDirs
+    classpath = sourceSets.integrationTest.runtimeClasspath
+}
+
+task cleanupDocker {
+    doLast {
+        dockerStop.getActions().each { Action action -> action.execute(dockerStop) }
+        dockerRemoveContainer.getActions().each { Action action -> action.execute(dockerRemoveContainer) }
+    }
+}
+
+integrationTest {
+    useJUnitPlatform()
+}
+
+check.dependsOn integrationTest
+integrationTest.mustRunAfter test
+
+if ("int-sql" == project.ext.integrationTestProfile) {
+    tasks.integrationTest.dependsOn tasks.dockerRun
+    tasks.dockerRun.dependsOn tasks.dockerStop
+    tasks.dockerRun.mustRunAfter tasks.compileIntegrationTestJava
+    tasks.integrationTest.finalizedBy tasks.cleanupDocker
+}
