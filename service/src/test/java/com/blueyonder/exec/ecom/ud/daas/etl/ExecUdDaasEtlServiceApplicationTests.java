@@ -1,4 +1,4 @@
-package com.blueyonder.exec.ecom.execud-daas-etl;
+package com.blueyonder.exec.ecom.ud.daas.etl;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;

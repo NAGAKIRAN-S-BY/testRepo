@@ -1,12 +1,12 @@
-package com.blueyonder.exec.ecom.execud-daas-etl.controller;
+package com.blueyonder.exec.ecom.ud.daas.etl.controller;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.blueyonder.exec.ecom.execud-daas-etl.api.BarsApi;
-import com.blueyonder.exec.ecom.execud-daas-etl.rbac.LiamPermissions;
+import com.blueyonder.exec.ecom.execud_daas_etl.api.BarsApi;
+import com.blueyonder.exec.ecom.ud.daas.etl.rbac.LiamPermissions;
 
 /**
  * Implements endpoints for the Bar api.

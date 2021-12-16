@@ -1,4 +1,4 @@
-package com.blueyonder.exec.ecom.execud-daas-etl.controller;
+package com.blueyonder.exec.ecom.ud.daas.etl.controller;
 
 import java.util.Objects;
 
@@ -11,14 +11,14 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.blueyonder.exec.ecom.execud-daas-etl.api.FoosApi;
-import com.blueyonder.exec.ecom.execud-daas-etl.api.model.FooModel;
-import com.blueyonder.exec.ecom.execud-daas-etl.api.model.MetaModel;
-import com.blueyonder.exec.ecom.execud-daas-etl.api.model.PageMetaModel;
-import com.blueyonder.exec.ecom.execud-daas-etl.api.model.PagedFoosModel;
-import com.blueyonder.exec.ecom.execud-daas-etl.model.Foo;
-import com.blueyonder.exec.ecom.execud-daas-etl.rbac.LiamPermissions;
-import com.blueyonder.exec.ecom.execud-daas-etl.repository.FooRepository;
+import com.blueyonder.exec.ecom.execud_daas_etl.api.FoosApi;
+import com.blueyonder.exec.ecom.execud_daas_etl.api.model.FooModel;
+import com.blueyonder.exec.ecom.execud_daas_etl.api.model.MetaModel;
+import com.blueyonder.exec.ecom.execud_daas_etl.api.model.PageMetaModel;
+import com.blueyonder.exec.ecom.execud_daas_etl.api.model.PagedFoosModel;
+import com.blueyonder.exec.ecom.ud.daas.etl.model.Foo;
+import com.blueyonder.exec.ecom.ud.daas.etl.rbac.LiamPermissions;
+import com.blueyonder.exec.ecom.ud.daas.etl.repository.FooRepository;
 
 /**
  * Implements endpoints for the Foo api.

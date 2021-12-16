@@ -1,4 +1,4 @@
-package com.blueyonder.exec.ecom.execud-daas-etl.rbac;
+package com.blueyonder.exec.ecom.ud.daas.etl.rbac;
 
 public class LiamPermissions {
     public static final String MANAGE = "@liam.hasPermission('by.ldf.starter.manage')";

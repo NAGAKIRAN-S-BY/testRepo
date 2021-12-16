@@ -1,4 +1,4 @@
-package com.blueyonder.exec.ecom.execud-daas-etl.model;
+package com.blueyonder.exec.ecom.ud.daas.etl.model;
 
 import org.junit.jupiter.api.Test;
 

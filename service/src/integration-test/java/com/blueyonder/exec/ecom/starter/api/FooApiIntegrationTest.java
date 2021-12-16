@@ -1,4 +1,4 @@
-package com.blueyonder.exec.ecom.execud-daas-etl.api;
+package com.blueyonder.exec.ecom.starter.api;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -11,9 +11,9 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 
-import com.blueyonder.exec.ecom.execud-daas-etl.ExecUdDaasEtlServiceApplication;
-import com.blueyonder.exec.ecom.execud-daas-etl.model.Foo;
-import com.blueyonder.exec.ecom.execud-daas-etl.repository.FooRepository;
+import com.blueyonder.exec.ecom.ud.daas.etl.ExecUdDaasEtlServiceApplication;
+import com.blueyonder.exec.ecom.ud.daas.etl.model.Foo;
+import com.blueyonder.exec.ecom.ud.daas.etl.repository.FooRepository;
 import com.blueyonder.service.common.liam.testing.IntegrationTestActiveProfileResolver;
 import com.blueyonder.service.common.liam.testing.WithIdentity;
 import com.fasterxml.jackson.databind.ObjectMapper;

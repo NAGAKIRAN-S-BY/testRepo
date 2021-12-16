@@ -1,4 +1,4 @@
-package com.blueyonder.exec.ecom.execud-daas-etl.controller;
+package com.blueyonder.exec.ecom.ud.daas.etl.controller;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -6,7 +6,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.blueyonder.exec.ecom.execud-daas-etl.api.EgressApi;
+import com.blueyonder.exec.ecom.execud_daas_etl.api.EgressApi;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 

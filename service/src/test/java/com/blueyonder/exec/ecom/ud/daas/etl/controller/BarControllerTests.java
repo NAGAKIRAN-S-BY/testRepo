@@ -1,4 +1,4 @@
-package com.blueyonder.exec.ecom.execud-daas-etl.controller;
+package com.blueyonder.exec.ecom.ud.daas.etl.controller;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

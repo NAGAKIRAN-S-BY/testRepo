@@ -1,11 +1,11 @@
-package com.blueyonder.exec.ecom.execud-daas-etl.repository;
+package com.blueyonder.exec.ecom.ud.daas.etl.repository;
 
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
-import com.blueyonder.exec.ecom.execud-daas-etl.model.Foo;
+import com.blueyonder.exec.ecom.ud.daas.etl.model.Foo;
 
 /**
  * Spring Data DAO (repository) for {@link Foo}.
